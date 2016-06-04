@@ -9,27 +9,33 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 
 using System.IO;
+using System.Windows.Media.Imaging;
 
 namespace image_viewer
 {
+    // TODO: Find solution for tagless file formats (such as .png).
+
     /// <summary>
     /// Shows an image and relevant controls.
     /// </summary>
     public partial class ImageForm : Form
     {
-        private static readonly string[] _validExtensions = { ".jpg", ".jpeg", ".bmp", ".gif", ".png", ".tiff" }; //  etc
+        private static readonly string[] _validExtensions = { ".jpg", ".jpeg", ".bmp", ".gif", ".png", ".tiff" };
 
-        string[] images = new string[0];
+        List<Tag> tagComponents;
         int currentImage;
-        Image previousImage;
-        Image nextImage;
+        List<Picture> pictures;
         bool canPrevious; // Whether there is a previous image.
         bool canNext; // Whether there is a next image.
 
         public ImageForm()
         {
+            tagComponents = new List<Tag>();
+            pictures = new List<Picture>();
+
             InitializeComponent();
-            ImageChanged();
+            
+            ChangeImage();
         }
 
         private void SetImage(Image image)
@@ -39,20 +45,27 @@ namespace image_viewer
 
         private void openFileDialog1_FileOk(object sender, CancelEventArgs e)
         {
-            SetImage(Image.FromStream(openFileDialog1.OpenFile()));
+            string fileName = openFileDialog1.FileName;
 
-            string directoryPath = Path.GetDirectoryName(openFileDialog1.FileName);
-            images = Directory.GetFiles(directoryPath);
+            // Get the paths to all of the images in the directory of the file chosen
+            string directoryPath = Path.GetDirectoryName(fileName);
+            List<string> imagePaths = new List<string>();
+            imagePaths = new List<string>(Directory.GetFiles(directoryPath));
 
-            currentImage = 0;
-            foreach(string imageName in images)
+            imagePaths.RemoveAll(s => !IsImage(s)); // Remove all non-images
+
+            // Fill the pictures list.
+            pictures.Clear();
+            foreach (string s in imagePaths)
             {
-                if (imageName == openFileDialog1.FileName)
-                    break;
-                currentImage++;
+                Image image = Image.FromFile(s);
+                List<string> tags = getTags(s);
+                pictures.Add(new Picture(image, tags));
             }
 
-            ImageChanged();
+            currentImage = imagePaths.FindIndex(s => s == fileName);
+
+            ChangeImage();
         }
 
         private void openButton_Click(object sender, EventArgs e)
@@ -70,33 +83,25 @@ namespace image_viewer
             NextImage();
         }
 
-        private void ImageChanged()
+        private void ChangeImage()
         {
-            string previousImagePath = "", nextImagePath = "";
+            if(pictures.Count > 0)
+                SetImage(pictures[currentImage].Image);
 
             canPrevious = false;
             if(currentImage - 1 >= 0)
             {
-                previousImagePath = images[currentImage - 1];
-                if (IsImage(previousImagePath))
                     canPrevious = true;
             }
 
             canNext = false;
-            if(currentImage < images.Length)
+            if(currentImage + 1 < pictures.Count)
             {
-                nextImagePath = images[currentImage + 1];
-                if (IsImage(nextImagePath))
                     canNext = true;
             }
 
-            // Load previous & next image.
-            if (canPrevious)
-                previousImage = Image.FromFile(previousImagePath);
-            if (canNext)
-                nextImage = Image.FromFile(nextImagePath);
-
             SetButtonEnableds();
+            SetTags();
         }
 
         private void SetButtonEnableds()
@@ -106,14 +111,28 @@ namespace image_viewer
             nextButton.Enabled = canNext;
         }
 
-        public static bool IsImage(string file)
+        private void SetTags()
         {
-            return IsImageExtension(Path.GetExtension(file));
+            tagComponents.Clear();
+
+            if (pictures.Count > 0)
+            {
+                int height = 0;
+                foreach (string s in pictures[currentImage].Tags)
+                {
+                    image_viewer.Tag tag = new image_viewer.Tag(s);
+                    tag.Location = new Point(0, 0 + height);
+                    tag.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
+                    tagsPanel.Controls.Add(tag);
+
+                    height += tag.Height;
+                }
+            }
         }
 
-        public static bool IsImageExtension(string ext)
+        public static bool IsImage(string file)
         {
-            return _validExtensions.Contains(ext);
+            return _validExtensions.Contains(Path.GetExtension(file));
         }
 
         private void PreviousImage()
@@ -121,9 +140,8 @@ namespace image_viewer
             if (canPrevious)
             {
                 currentImage--;
-                SetImage(previousImage);
 
-                ImageChanged();
+                ChangeImage();
             }
         }
 
@@ -132,9 +150,8 @@ namespace image_viewer
             if (canNext)
             {
                 currentImage++;
-                SetImage(nextImage);
 
-                ImageChanged();
+                ChangeImage();
             }
         }
 
@@ -150,6 +167,17 @@ namespace image_viewer
                     break;
             }
             return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        public List<string> getTags(string file)
+        {
+            using (FileStream fs = new FileStream(file, FileMode.Open, FileAccess.Read))
+            {
+                BitmapSource img = BitmapFrame.Create(fs);
+                BitmapMetadata md = (BitmapMetadata)img.Metadata;
+                List<string> tags = new List<string>(md.Keywords);
+                return tags;
+            }
         }
     }
 }
