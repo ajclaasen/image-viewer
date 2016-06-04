@@ -1,6 +1,6 @@
 ﻿namespace image_viewer
 {
-    partial class Form1
+    partial class LibraryForm
     {
         /// <summary>
         /// Required designer variable.
